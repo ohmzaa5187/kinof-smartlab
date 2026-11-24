@@ -15,6 +15,8 @@ export interface UserScheduleItem {
   room_name: string;
   term_id: number;
   term_name: string;
+  term_start: string;
+  term_end: string;
 }
 
 @Injectable()
@@ -37,7 +39,9 @@ export class ScheduleService {
           s.room_id,
           r.room_name,
           at.id AS term_id,
-          at.term_name
+          at.term_name,
+          DATE_FORMAT(at.start_date, '%Y-%m-%d') AS term_start,
+          DATE_FORMAT(at.end_date, '%Y-%m-%d') AS term_end
         FROM subject_enrollments AS se
         INNER JOIN subjects AS s ON s.id = se.subject_id
         INNER JOIN academic_terms AS at ON at.id = s.term_id
@@ -68,6 +72,8 @@ export class ScheduleService {
       room_name: String(row.room_name),
       term_id: Number(row.term_id),
       term_name: String(row.term_name),
+      term_start: String(row.term_start),
+      term_end: String(row.term_end),
     }));
   }
 

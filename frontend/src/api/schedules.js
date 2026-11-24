@@ -12,7 +12,23 @@ export function getMySchedule(date) {
     startTime: item.start_time,
     endTime: item.end_time,
     room: item.room_name,
+    termStart: item.term_start,
+    termEnd: item.term_end,
   })));
+}
+
+function calendarDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isInsideTerm(item, date) {
+  const key = calendarDateKey(date);
+  if (item.termStart && key < item.termStart) return false;
+  if (item.termEnd && key > item.termEnd) return false;
+  return true;
 }
 
 function dayNameToNumber(day) {
@@ -35,6 +51,7 @@ function parseHm(value) {
 
 export function scheduleOverlapsSlot(item, date, slot) {
   if (item.dayOfWeek !== date.getDay()) return false;
+  if (!isInsideTerm(item, date)) return false;
   const { start, end } = slotToRange(date, slot);
   const classStart = parseHm(item.startTime);
   const classEnd = parseHm(item.endTime);

@@ -120,6 +120,7 @@ export class BookingsService {
     await queryRunner.startTransaction();
 
     try {
+      this.ensureSlotStillOpen(dto);
       const room = await this.findAndLockRoom(queryRunner, dto.room_id);
       await this.ensureHostHasNoBooking(queryRunner, hostId, dto);
       await this.ensureNoClassSchedule(queryRunner, dto);
@@ -313,6 +314,7 @@ export class BookingsService {
     await queryRunner.startTransaction();
 
     try {
+      this.ensureSlotStillOpen(dto);
       await this.ensureInvitedUsersExist(queryRunner, uniqueMemberIds);
       await this.ensureHostHasNoBooking(queryRunner, hostId, dto);
 
@@ -594,6 +596,10 @@ export class BookingsService {
       if (Number(booking.is_expired) === 1) {
         throw new GoneException('รายการจองกลุ่มหมดเวลาแล้ว');
       }
+      this.ensureSlotStillOpen({
+        booking_date: String(booking.booking_date),
+        time_slot: booking.time_slot as BookingTimeSlot,
+      });
 
       const progressResult = (await queryRunner.query(
         `
@@ -691,7 +697,14 @@ export class BookingsService {
         WHERE host_id = ?
           AND booking_date = ?
           AND time_slot = ?
-          AND status IN ('pending', 'confirmed')
+          AND (
+            status = 'confirmed'
+            OR (
+              status = 'pending'
+              AND expires_at IS NOT NULL
+              AND expires_at > NOW()
+            )
+          )
         LIMIT 1
       `,
       [hostId, dto.booking_date, dto.time_slot],
@@ -739,7 +752,14 @@ export class BookingsService {
         WHERE b.id <> ?
           AND b.booking_date = ?
           AND b.time_slot = ?
-          AND b.status IN ('pending', 'confirmed')
+          AND (
+            b.status = 'confirmed'
+            OR (
+              b.status = 'pending'
+              AND b.expires_at IS NOT NULL
+              AND b.expires_at > NOW()
+            )
+          )
           AND (
             b.host_id = ?
             OR (bm.user_id = ? AND bm.invite_status = 'accepted')
@@ -817,6 +837,14 @@ export class BookingsService {
 
     if (usedSeats + requiredSeats > Number(room.capacity)) {
       throw new ConflictException('ห้องนี้มีที่นั่งไม่พอสำหรับการจอง');
+    }
+  }
+
+  private ensureSlotStillOpen(dto: BookingSlot): void {
+    const end = this.getSlotTimes(dto.time_slot).end;
+    const endsAt = new Date(`${dto.booking_date}T${end}+07:00`);
+    if (Number.isNaN(endsAt.getTime()) || endsAt.getTime() <= Date.now()) {
+      throw new ConflictException('รอบนี้เลยเวลาแล้ว ไม่สามารถจองได้');
     }
   }
 

@@ -28,14 +28,14 @@ describe('BookingsService', () => {
     };
     const service = new BookingsService(dataSource as unknown as DataSource);
     const dto: CreateSoloBookingDto = {
-      booking_date: '2026-09-12',
+      booking_date: '2099-06-12',
       time_slot: '09:00-11:30',
       room_id: 3,
     };
 
     await expect(service.createSoloBooking(7, dto)).resolves.toEqual({
       booking_id: 42,
-      booking_date: '2026-09-12',
+      booking_date: '2099-06-12',
       time_slot: '09:00-11:30',
       reserved_seats: 1,
       status: 'confirmed',
@@ -68,13 +68,13 @@ describe('BookingsService', () => {
 
     await expect(
       service.createGroupBooking(7, {
-        booking_date: '2026-09-12',
+        booking_date: '2099-06-12',
         time_slot: '09:00-11:30',
         member_ids: [8, 9],
       }),
     ).resolves.toEqual({
       booking_id: 43,
-      booking_date: '2026-09-12',
+      booking_date: '2099-06-12',
       time_slot: '09:00-11:30',
       reserved_seats: 3,
       status: 'pending',
@@ -88,7 +88,7 @@ describe('BookingsService', () => {
     expect(query).toHaveBeenNthCalledWith(
       3,
       expect.stringContaining('?, NULL)'),
-      ['2026-09-12', '09:00-11:30', 3, 7],
+      ['2099-06-12', '09:00-11:30', 3, 7],
     );
     expect(queryRunner.commitTransaction).toHaveBeenCalledTimes(1);
     expect(queryRunner.rollbackTransaction).not.toHaveBeenCalled();
@@ -205,7 +205,7 @@ describe('BookingsService', () => {
         {
           id: 11,
           host_id: 7,
-          booking_date: '2026-09-12',
+          booking_date: '2099-06-12',
           time_slot: '09:00-11:30',
           reserved_seats: 3,
           status: 'pending',
@@ -234,7 +234,7 @@ describe('BookingsService', () => {
       service.confirmGroupBookingRoom(7, 11, { room_id: 3 }),
     ).resolves.toEqual({
       booking_id: 11,
-      booking_date: '2026-09-12',
+      booking_date: '2099-06-12',
       time_slot: '09:00-11:30',
       reserved_seats: 3,
       status: 'confirmed',
@@ -278,6 +278,34 @@ describe('BookingsService', () => {
         room: { id: 3, room_name: 'LAB-C' },
       },
     ]);
+  });
+
+  it('ปฏิเสธการจองรอบที่เลยเวลาแล้ว', async () => {
+    const query = jest.fn();
+    const queryRunner = {
+      connect: jest.fn().mockResolvedValue(undefined),
+      startTransaction: jest.fn().mockResolvedValue(undefined),
+      query,
+      commitTransaction: jest.fn().mockResolvedValue(undefined),
+      rollbackTransaction: jest.fn().mockResolvedValue(undefined),
+      release: jest.fn().mockResolvedValue(undefined),
+    };
+    const dataSource = {
+      createQueryRunner: jest.fn().mockReturnValue(queryRunner),
+    };
+    const service = new BookingsService(dataSource as unknown as DataSource);
+
+    await expect(
+      service.createSoloBooking(7, {
+        booking_date: '2020-01-01',
+        time_slot: '09:00-11:30',
+        room_id: 3,
+      }),
+    ).rejects.toThrow('รอบนี้เลยเวลาแล้ว');
+    expect(query).not.toHaveBeenCalled();
+    expect(queryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    expect(queryRunner.commitTransaction).not.toHaveBeenCalled();
+    expect(queryRunner.release).toHaveBeenCalledTimes(1);
   });
 
   it('ให้ host ยกเลิก booking และ commit transaction', async () => {

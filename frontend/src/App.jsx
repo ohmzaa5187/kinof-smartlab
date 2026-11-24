@@ -84,6 +84,22 @@ const ADMIN_NAV = [
   { key: "helpcenter", label: "ศูนย์แก้ไขปัญหา", icon: LifeBuoy },
 ];
 
+function pageStorageKey(forRole) {
+  return forRole === "admin" ? "kinofAdminPage" : "kinofUserPage";
+}
+
+function allowedPages(forRole) {
+  return forRole === "admin"
+    ? [...ADMIN_NAV.map((item) => item.key), "audit"]
+    : USER_NAV.map((item) => item.key);
+}
+
+function readSavedPage(forRole) {
+  const saved = sessionStorage.getItem(pageStorageKey(forRole));
+  if (saved && allowedPages(forRole).includes(saved)) return saved;
+  return forRole === "admin" ? "dashboard" : "home";
+}
+
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -93,10 +109,7 @@ export default function App() {
   });
   const [bootstrapping, setBootstrapping] = useState(() => Boolean(readStoredAuth()));
   const role = isStaffAdmin(auth?.user?.userType) ? "admin" : "user";
-  const [page, setPage] = useState(() => {
-    if (role === "admin") return sessionStorage.getItem("kinofAdminPage") || "dashboard";
-    return "home";
-  });
+  const [page, setPage] = useState(() => readSavedPage(role));
   const [toast, setToast] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [trackingNav, setTrackingNav] = useState(null);
@@ -209,13 +222,23 @@ export default function App() {
     };
   }, [navigate]);
 
+  const signedInUserId = auth?.user?.id ?? null;
+  const previousUserIdRef = useRef(signedInUserId);
   useEffect(() => {
-    setPage(role === "admin" ? "dashboard" : "home");
+    if (!signedInUserId || !allowedPages(role).includes(page)) return;
+    sessionStorage.setItem(pageStorageKey(role), page);
+  }, [page, role, signedInUserId]);
+  useEffect(() => {
+    if (previousUserIdRef.current === signedInUserId) return;
+    previousUserIdRef.current = signedInUserId;
+    const nextPage = role === "admin" ? "dashboard" : "home";
+    setPage(nextPage);
+    if (signedInUserId) sessionStorage.setItem(pageStorageKey(role), nextPage);
     setTrackingNav(null);
     setMyBookings([]);
     setProblemReports([]);
     setNavBadges({ invite: 0, monitor: 0, helpcenter: 0 });
-  }, [auth?.user?.id, role]);
+  }, [signedInUserId, role]);
 
   useEffect(() => {
     if (bootstrapping || !auth?.accessToken || role !== "user") return;
@@ -228,7 +251,10 @@ export default function App() {
 
   useEffect(() => {
     if (bootstrapping || !auth?.accessToken || location.pathname !== "/entry-otp") return;
-    if (role === "user") setPage("entry-otp");
+    if (role === "user") {
+      setPage("entry-otp");
+      sessionStorage.setItem("kinofUserPage", "entry-otp");
+    }
     navigate("/", { replace: true });
   }, [auth?.accessToken, bootstrapping, location.pathname, navigate, role]);
 
@@ -296,7 +322,12 @@ export default function App() {
     });
     tabSessionIdRef.current = nextAuth.sessionId;
     setAuth(nextAuth);
-    setPage(isStaffAdmin(result.user.userType) ? "dashboard" : "home");
+    const landingPage = isStaffAdmin(result.user.userType) ? "dashboard" : "home";
+    setPage(landingPage);
+    sessionStorage.setItem(
+      pageStorageKey(isStaffAdmin(result.user.userType) ? "admin" : "user"),
+      landingPage,
+    );
     if (!result.user.faceEnrolled && !isStaffAdmin(result.user.userType)) {
       navigate("/register/face");
       return;
@@ -316,6 +347,7 @@ export default function App() {
     tabSessionIdRef.current = null;
     sessionStorage.removeItem("kinofPendingLogin");
     sessionStorage.removeItem("kinofAdminPage");
+    sessionStorage.removeItem("kinofUserPage");
     sessionStorage.removeItem("kinofMonitorTab");
     setAuth(null);
     setSidebarOpen(false);
@@ -333,7 +365,7 @@ export default function App() {
     }
     if (nextPage === "tracking") setTrackingNav(null);
     setPage(nextPage);
-    if (role === "admin") sessionStorage.setItem("kinofAdminPage", nextPage);
+    sessionStorage.setItem(pageStorageKey(role), nextPage);
   };
 
   const openTrackingRoom = (roomId) => {

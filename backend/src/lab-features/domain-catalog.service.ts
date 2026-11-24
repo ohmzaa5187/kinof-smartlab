@@ -111,8 +111,8 @@ export class DomainCatalogService {
         )[0];
         if (existing) continue; // Preserve rules created by administrators.
         const result = await m.query(
-          "INSERT INTO blocked_domains (domain_name,category,severity,action,match_type,is_enabled) VALUES (?,?,'medium','block','suffix',1)",
-          [domain, category],
+          "INSERT INTO blocked_domains (domain_name,category,severity,action,match_type,is_enabled,added_by,reason) VALUES (?,?,'medium','block','suffix',1,?,'UT1')",
+          [domain, category, admin],
         );
         await m.query(
           'INSERT INTO imported_domain_rules (domain_id,category) VALUES (?,?)',

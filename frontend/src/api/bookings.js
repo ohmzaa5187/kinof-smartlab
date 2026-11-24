@@ -51,16 +51,19 @@ export async function getBookingGroupStatus(bookingId) {
     respondedAt: member.responded_at ?? null,
   }));
 
+  const expiresAtMs = booking.expires_at
+    ? parseStoredDate(booking.expires_at).getTime()
+    : null;
   const isExpired =
     booking.status === "expired" ||
     (booking.status === "pending" &&
-      booking.expires_at &&
-      new Date(booking.expires_at).getTime() <= Date.now());
+      expiresAtMs !== null &&
+      expiresAtMs <= Date.now());
 
   return {
     id: Number(booking.booking_id),
     status: booking.status,
-    expiresAt: booking.expires_at,
+    expiresAt: expiresAtMs === null ? null : new Date(expiresAtMs).toISOString(),
     members,
     isExpired,
     canConfirm:
@@ -135,6 +138,7 @@ export function mapBookingRow(booking) {
     startTime: normalized.startTime,
     endTime: normalized.endTime,
     status: normalized.status,
+    expiresAt: normalized.expires_at ?? null,
     createdAt: normalized.createdAt,
   };
 }

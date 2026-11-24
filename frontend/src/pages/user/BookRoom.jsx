@@ -208,9 +208,25 @@ export default function BookRoom({ onBookingCreated, notify, existingBookings = 
     return target < today;
   };
 
+  const isSlotPast = (checkSlot, date = selectedDate) => {
+    const { end } = slotToRange(date, checkSlot);
+    return end.getTime() <= Date.now();
+  };
+
+  const bookingStillOccupiesSlot = (booking) => {
+    if (booking.status === "cancelled" || booking.status === "expired") return false;
+    if (booking.status === "pending") {
+      const raw = booking.expiresAt || booking.expires_at;
+      if (!raw) return false;
+      return parseStoredDate(raw).getTime() > Date.now();
+    }
+    return true;
+  };
+
   const isSlotBooked = (checkSlot) => {
     const { start, end } = slotToRange(selectedDate, checkSlot);
     return bookingsList.some((booking) => {
+      if (!bookingStillOccupiesSlot(booking)) return false;
       if (booking.startTime && booking.endTime) {
         return parseStoredDate(booking.startTime).getTime() === start.getTime()
           && parseStoredDate(booking.endTime).getTime() === end.getTime();
@@ -332,6 +348,10 @@ export default function BookRoom({ onBookingCreated, notify, existingBookings = 
 
   const handleProceedToConfirmation = async () => {
     if (!slot || cannotBook || isSubmitting) return;
+    if (isSlotPast(slot)) {
+      notify?.("รอบนี้เลยเวลาแล้ว กรุณาเลือกช่วงเวลาที่ยังไม่เลย");
+      return;
+    }
     if (friends.length === 0) {
       setHasSearchedRooms(false);
       setSelectedRoom(null);
@@ -364,6 +384,10 @@ export default function BookRoom({ onBookingCreated, notify, existingBookings = 
 
   const handleConfirmBooking = async () => {
     if (!selectedRoom || !slot || cannotBook) return;
+    if (isSlotPast(slot)) {
+      notify?.("รอบนี้เลยเวลาแล้ว กรุณาเลือกช่วงเวลาที่ยังไม่เลย");
+      return;
+    }
     if (hasFriends && !canConfirmBooking) return;
 
     setIsSubmitting(true);
@@ -438,8 +462,9 @@ export default function BookRoom({ onBookingCreated, notify, existingBookings = 
 
   const renderSlotButton = (slotOption) => {
     const booked = isSlotBooked(slotOption);
+    const past = isSlotPast(slotOption);
     const classConflict = getSlotClassConflict(slotOption);
-    const isDisabled = booked || !!classConflict;
+    const isDisabled = booked || past || !!classConflict;
 
     return (
       <button
@@ -455,7 +480,7 @@ export default function BookRoom({ onBookingCreated, notify, existingBookings = 
         className={`text-xs text-left rounded-xl px-4 py-3 border transition-all duration-150 flex items-center justify-between ${
           classConflict
             ? "bg-rose-50/50 border-rose-200 text-rose-400 cursor-not-allowed"
-            : booked
+            : booked || past
             ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
             : slot?.id === slotOption.id
             ? "text-white font-medium shadow-blue-glow scale-[1.01] bg-navy-800 border-navy-800"
@@ -466,6 +491,10 @@ export default function BookRoom({ onBookingCreated, notify, existingBookings = 
         {classConflict ? (
           <span className="text-xs bg-rose-100 text-rose-700 font-medium px-2.5 py-0.5 rounded-full" title={classConflict.course}>
             ติดเรียน
+          </span>
+        ) : past ? (
+          <span className="text-xs bg-slate-200 text-slate-600 font-medium px-2.5 py-0.5 rounded-full">
+            เลยเวลาแล้ว
           </span>
         ) : booked ? (
           <span className="text-xs bg-slate-200 text-slate-600 font-medium px-2.5 py-0.5 rounded-full">
@@ -706,7 +735,7 @@ export default function BookRoom({ onBookingCreated, notify, existingBookings = 
           </div>
 
           <div className="flex justify-end pt-2">
-            <Button variant="primary" icon={ArrowRight} disabled={!slot} onClick={() => setStep(2)}>
+            <Button variant="primary" icon={ArrowRight} disabled={!slot || isSlotPast(slot)} onClick={() => setStep(2)}>
               ถัดไป
             </Button>
           </div>

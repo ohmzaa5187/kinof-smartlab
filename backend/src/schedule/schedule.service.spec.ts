@@ -21,6 +21,8 @@ describe('ScheduleService', () => {
           room_name: 'LAB-3',
           term_id: '1',
           term_name: '1/2569',
+          term_start: '2026-11-24',
+          term_end: '2026-12-24',
         },
       ]),
     };
@@ -31,6 +33,8 @@ describe('ScheduleService', () => {
       subject_id: 2,
       room_id: 3,
       term_id: 1,
+      term_start: '2026-11-24',
+      term_end: '2026-12-24',
     });
   });
 });

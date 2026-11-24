@@ -62,6 +62,37 @@ describe('ScheduleImportService', () => {
     });
   });
 
+  it('ยอมรับภาคเรียนเดิมเมื่อวันที่ในฐานข้อมูลเป็นเที่ยงคืนตามเวลาเครื่อง', async () => {
+    const dataSource = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce([{ id: 12, student_id: '1660705334' }])
+        .mockResolvedValueOnce([{ id: 1, room_name: 'LAB-A' }])
+        .mockResolvedValueOnce([
+          { id: 12, first_name: 'โอม', last_name: 'โคมไฟ' },
+        ])
+        .mockResolvedValueOnce([
+          {
+            term_name: '1/2026',
+            start_date: new Date(2026, 10, 24),
+            end_date: new Date(2026, 11, 24),
+          },
+        ]),
+    };
+    const service = new ScheduleImportService(
+      dataSource as unknown as DataSource,
+    );
+    const file = Buffer.from(
+      'term_name,term_start_date,term_end_date,subject_code,subject_name,section,class_type,instructor_name,day_of_week,start_time,end_time,room_name,student_id\n1/2026,2026-11-24,2026-12-24,WEDLAB,แล็บทุกวันพุธ,1,LAB,ทดสอบนำเข้า CSV,Wednesday,09:00,11:30,LAB-A,1660705334',
+    );
+
+    await expect(service.preview(file)).resolves.toMatchObject({
+      canConfirm: true,
+      errorCount: 0,
+      enrollments: [{ studentId: '1660705334', status: 'linked' }],
+    });
+  });
+
   it('ไม่ยืนยันเมื่อห้อง วัน เวลา และผู้ใช้ไม่ถูกต้อง', async () => {
     const dataSource = {
       query: jest
