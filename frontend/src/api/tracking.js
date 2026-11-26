@@ -45,6 +45,7 @@ export async function getTrackingSeats(roomId) {
     session: row.session_id ? {
       id: row.session_id,
       startedAt: row.login_time,
+      hasActiveBooking: Number(row.has_active_booking) === 1,
       user: {
         id: row.user_id,
         username: row.username,
@@ -80,7 +81,7 @@ function toActivity(row) {
     roomName: row.room_name,
     seatId: row.computer_id,
     seatLabel: row.machine_no,
-    website: row.event_type === "website" ? row.domain : null,
+    website: row.event_type === "website" || row.domain ? row.domain || row.name : null,
     activity: row.domain || row.name || row.event_type,
     durationMinutes: row.duration_minutes,
     suspicious: row.risk_level !== "none",

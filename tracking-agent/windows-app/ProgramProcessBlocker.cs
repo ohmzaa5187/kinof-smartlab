@@ -196,7 +196,7 @@ internal sealed class ProgramProcessBlocker(ILogger<ProgramProcessBlocker> logge
         var slash = value.LastIndexOf('\\');
         if (slash >= 0)
             value = value[(slash + 1)..];
-        if (!value.EndsWith(".exe", StringComparison.Ordinal) && !value.Contains('.'))
+        if (!value.EndsWith(".exe", StringComparison.Ordinal))
             value += ".exe";
         return value.Trim();
     }

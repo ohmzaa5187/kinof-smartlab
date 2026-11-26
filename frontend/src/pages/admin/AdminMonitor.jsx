@@ -94,13 +94,20 @@ const isClearedTarget = (row, cleared) => {
 
 const isProgramBlocked = (program, blocked) => matchesBlockedProgram(program, blocked);
 
-const isBlockedTarget = (row, domains, programs) => {
-  const website = row.website || (row.kind === "website" ? row.target : null);
-  const program = row.program || (row.kind === "program" ? row.target : null);
-  return isWebsiteBlocked(website, domains) || isProgramBlocked(program, programs);
+const bangkokDay = (value) => {
+  if (!value) return "";
+  const text = value instanceof Date ? value.toISOString() : String(value);
+  const parsed = /[zZ]|[+-]\d{2}:?\d{2}$/.test(text) ? new Date(text) : new Date(`${text.replace(" ", "T")}Z`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
 };
 
-const rowKey = (row) => queueKeyOf(row);
+const onSelectedDay = (row, dateFilter) => dateFilter === "all" || bangkokDay(row.lastSeenAt || row.at) === dateFilter;
 
 const activityToReviewRow = (row) => {
   const mapped = {
@@ -147,7 +154,8 @@ const matchesBlockedProgram = (program, blocked) => {
 
 const formatDateTime = (value) => {
   if (!value) return "-";
-  const parsed = new Date(value);
+  const text = value instanceof Date ? value.toISOString() : String(value);
+  const parsed = /[zZ]|[+-]\d{2}:?\d{2}$/.test(text) ? new Date(text) : new Date(`${text.replace(" ", "T")}Z`);
   if (Number.isNaN(parsed.getTime())) return String(value);
   return parsed.toLocaleString("th-TH", {
     dateStyle: "short",
@@ -208,8 +216,6 @@ export default function AdminMonitor({ notify, onOpenTrackingSeat, onBadgesChang
       setProgramBlacklist(nextPrograms);
       setProgramAllowlist(nextAllow);
       setUt1Catalog(nextCategories);
-      const domainSet = new Set(nextBlacklist.map((item) => normalizeDomain(item.domain)).filter(Boolean));
-      const programSet = new Set(nextPrograms.map((item) => String(item.processName || "").trim().toLowerCase()).filter(Boolean));
       if (tab === REVIEW_TAB) {
         const [reviewData, flagged] = await Promise.all([
           getBehaviorReviews({ roomId: roomFilter }),
@@ -217,10 +223,10 @@ export default function AdminMonitor({ notify, onOpenTrackingSeat, onBadgesChang
         ]);
         const cleared = new Set(reviewData.clearedKeys);
         const handled = new Set(reviewData.handledKeys);
-        const pending = reviewData.items.filter((row) => !isBlockedTarget(row, domainSet, programSet) && !isClearedTarget(row, cleared));
+        const pending = reviewData.items.filter((row) => !isClearedTarget(row, cleared) && onSelectedDay(row, dateFilter));
         const seen = new Set(pending.map(queueKeyOf));
         const extras = flagged
-          .filter((row) => row.suspicious && !isBlockedTarget(row, domainSet, programSet))
+          .filter((row) => row.suspicious)
           .map(activityToReviewRow)
           .filter((row) => {
             const key = queueKeyOf(row);
@@ -494,7 +500,7 @@ export default function AdminMonitor({ notify, onOpenTrackingSeat, onBadgesChang
         <Summary icon={Users} label="ผู้ใช้งานปัจจุบัน" value={summary ? `${summary.activeUsers} คน` : "-"} tone="bg-navy-50 text-navy-800" />
         <Summary icon={Monitor} label="เครื่องพร้อมใช้งาน" value={summary ? `${summary.machinesReady}/${summary.machinesTotal}` : "-"} tone="bg-teal-50 text-teal-500" />
         <Summary icon={Globe2} label="เว็บไซต์วันนี้" value={summary ? `${summary.websitesToday} รายการ` : "-"} tone="bg-blue-50 text-blue-600" />
-        <Summary icon={AlertTriangle} label="รายการน่าสงสัย" value={summary ? `${summary.flaggedCount} รายการ` : "-"} tone="bg-amber-50 text-amber-600" />
+        <Summary icon={AlertTriangle} label="น่าสงสัยวันนี้" value={summary ? `${summary.flaggedCount} รายการ` : "-"} tone="bg-amber-50 text-amber-600" />
       </div>
 
       <Card variant="flat" className="p-4 mb-5">

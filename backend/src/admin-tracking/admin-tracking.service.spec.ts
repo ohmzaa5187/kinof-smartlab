@@ -32,6 +32,9 @@ describe('AdminTrackingService', () => {
       websites_today: 18,
       flagged_count: 2,
     });
+    const sql = dataSource.query.mock.calls[0][0] as string;
+    expect(sql).toContain('GROUP BY queue_key');
+    expect(sql).toContain("handled_review.status <> 'pending'");
   });
 
   it('ส่งออกรายงานเว็บไซต์เป็น CSV ที่รองรับข้อความมี comma', async () => {
@@ -66,6 +69,21 @@ describe('AdminTrackingService', () => {
     expect(result.content.charCodeAt(0)).toBe(0xfeff);
   });
 
+  it('เทียบเครื่องที่ใช้งานกับการจองที่ยืนยันและยังไม่หมดเวลา', async () => {
+    const dataSource = { query: jest.fn().mockResolvedValue([]) };
+    const service = new AdminTrackingService(
+      dataSource as unknown as DataSource,
+    );
+
+    await service.computers(1);
+
+    const sql = dataSource.query.mock.calls[0][0] as string;
+    expect(sql).toContain('AS has_active_booking');
+    expect(sql).toContain("b.status = 'confirmed'");
+    expect(sql).toContain('b.host_id = ps.user_id');
+    expect(dataSource.query.mock.calls[0][1]).toEqual([1]);
+  });
+
   it('กรองกิจกรรมที่ backend และรวม login/logout ในแท็บ session', async () => {
     const dataSource = { query: jest.fn().mockResolvedValue([]) };
     const service = new AdminTrackingService(
@@ -83,10 +101,11 @@ describe('AdminTrackingService', () => {
       string,
       unknown[],
     ];
-    expect(sql).toContain('r.id = ?');
-    expect(sql).toContain("te.event_type IN ('login', 'logout')");
+    expect(sql).toContain('te.room_id = ?');
+    expect(sql).toContain('FROM pc_sessions AS ps');
+    expect(sql).toContain('เข้าใช้งาน');
     expect(sql).toContain(
-      "DATE(CONVERT_TZ(te.occurred_at, '+00:00', '+07:00')) = ?",
+      "DATE(IF(te.occurred_at > UTC_TIMESTAMP() + INTERVAL 30 MINUTE, te.occurred_at, CONVERT_TZ(te.occurred_at, '+00:00', '+07:00'))) = ?",
     );
     expect(parameters).toEqual([3, '2026-09-26', 50]);
   });

@@ -22,8 +22,8 @@ internal sealed class Worker(
     {
         if (!api.HasApiKey)
         {
-            logger.LogError("ใส่ Kinof:ApiKey ใน appsettings.json หรือตัวแปร Kinof__ApiKey ก่อนรัน");
-            session.Clear("ใส่ Kinof:ApiKey ใน appsettings.json ก่อนรัน");
+            logger.LogError("ใส่ Kinof:ApiKey ใน appsettings.json ตัวแปร Kinof__ApiKey หรือไฟล์ agent-api.key ข้างโปรแกรม");
+            session.Clear("วางไฟล์ agent-api.key ไว้ข้าง Kinof.Agent.exe");
             return;
         }
 

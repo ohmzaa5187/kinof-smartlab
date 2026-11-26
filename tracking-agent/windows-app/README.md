@@ -5,13 +5,12 @@ Imported from Virus260710/Kinof-project at 23bfe9e and adapted to this repositor
 Requires .NET SDK 8 and Windows. Backend runs on port 3000.
 Create a per-computer Agent key from the admin Tracking screen. No seeded dev key is accepted.
 
-Run from PowerShell as Administrator (hosts rules require elevation):
+Double-click `Kinof.Agent.exe` from `tracking-agent/dist`. Windows asks for Administrator because hosts rules require elevation. Put `agent-api.key` (one line, the per-computer key) next to the exe. Set `ApiBaseUrl` in the copied `appsettings.json` when the backend is on another machine. The Thai install steps, including the browser extension, are in `../คู่มือติดตั้ง.md`.
+
+Rebuild the exe:
 
 ```powershell
-cd C:\Users\User\OneDrive\Desktop\kinof2\tracking-agent\windows-app
-$env:Kinof__ApiBaseUrl = "http://localhost:3000"
-$env:Kinof__ApiKey = "KEY_FROM_ADMIN"
-dotnet run
+dotnet publish -c Release -o ..\dist
 ```
 
 Use the Backend host's IP when running on a different PC or VM. Keep the key private.

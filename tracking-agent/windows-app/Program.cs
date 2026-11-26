@@ -11,6 +11,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+        LoadAgentKeyFile();
 
         var builder = Host.CreateApplicationBuilder(args);
         builder.Services.AddWindowsService(options => options.ServiceName = "KinofAgent");
@@ -33,5 +34,26 @@ internal static class Program
             host.StopAsync().GetAwaiter().GetResult();
             host.Dispose();
         }
+    }
+
+    /// <summary>
+    /// A key file beside the exe lets a lab PC start by double-click.
+    /// An explicit Kinof__ApiKey environment variable still wins.
+    /// </summary>
+    private static void LoadAgentKeyFile()
+    {
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("Kinof__ApiKey")))
+            return;
+
+        var exeDir = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+        var path = Path.Combine(exeDir, "agent-api.key");
+        if (!File.Exists(path))
+            return;
+
+        var key = File.ReadAllText(path).Trim().TrimStart('\uFEFF');
+        if (key.Length == 0)
+            return;
+
+        Environment.SetEnvironmentVariable("Kinof__ApiKey", key);
     }
 }

@@ -21,6 +21,21 @@ import {
 } from '../agent/agent-auth.guard';
 import { DataSource } from 'typeorm';
 import { LabService, rows } from './lab.service';
+
+function bangkokDay(value: unknown): string {
+  if (value == null || value === '') return '';
+  const text = value instanceof Date ? value.toISOString() : String(value);
+  const parsed = /[zZ]|[+-]\d{2}:?\d{2}$/.test(text)
+    ? new Date(text)
+    : new Date(`${text.replace(' ', 'T')}Z`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(parsed);
+}
 import {
   AgentLoginDto,
   AgentResendDto,
@@ -144,9 +159,10 @@ export class LabAdminController {
         "SELECT COUNT(*) AS total FROM issues WHERE status='pending'",
       ),
     )[0];
+    const today = bangkokDay(new Date());
     return {
       invite: 0,
-      monitor: review.items.length,
+      monitor: review.items.filter((item) => bangkokDay(item.lastSeenAt) === today).length,
       helpcenter: Number(issue?.total ?? 0),
     };
   }

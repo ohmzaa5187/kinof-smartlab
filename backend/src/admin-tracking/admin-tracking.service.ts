@@ -32,15 +32,28 @@ export class AdminTrackingService {
             AND ps.id IS NOT NULL THEN 1 ELSE 0 END) AS in_use,
           COUNT(DISTINCT ps.user_id) AS active_users,
           (SELECT COUNT(*) FROM tracking_events AS today_event
-            WHERE today_event.event_type = 'website'
-              AND DATE(CONVERT_TZ(today_event.occurred_at, '+00:00', '+07:00'))
+            WHERE (today_event.event_type = 'website' OR today_event.domain IS NOT NULL)
+              AND ${this.bangkokDate('today_event.occurred_at')}
                 = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+07:00'))
           ) AS websites_today,
-          (SELECT COUNT(*) FROM tracking_events AS risk_event
-            WHERE risk_event.risk_level <> 'none'
-              AND DATE(CONVERT_TZ(risk_event.occurred_at, '+00:00', '+07:00'))
+          (SELECT COUNT(*) FROM (
+            SELECT CONCAT(
+              COALESCE(flagged_session.user_id, 'anon'), ':',
+              IF(flagged_event.domain IS NOT NULL, 'website', IF(flagged_event.event_type = 'program', 'program', 'suspicious')), ':',
+              LOWER(COALESCE(flagged_event.domain, flagged_event.name, flagged_event.event_type))
+            ) AS queue_key
+            FROM tracking_events AS flagged_event
+            LEFT JOIN pc_sessions AS flagged_session ON flagged_session.id = flagged_event.session_id
+            WHERE flagged_event.risk_level <> 'none'
+              AND ${this.bangkokDate('flagged_event.occurred_at')}
                 = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+07:00'))
-          ) AS flagged_count
+            GROUP BY queue_key
+          ) AS flagged_today
+          WHERE NOT EXISTS (
+            SELECT 1 FROM behavior_reviews AS handled_review
+            WHERE handled_review.queue_key = flagged_today.queue_key
+              AND handled_review.status <> 'pending'
+          )) AS flagged_count
         FROM lab_computers AS lc
         INNER JOIN rooms AS r ON r.id = lc.room_id
         LEFT JOIN tracking_agents AS ta
@@ -103,6 +116,25 @@ export class AdminTrackingService {
             ps.id AS session_id, ps.user_id, ps.login_time,
             u.username, u.first_name, u.last_name, u.role,
             CASE
+              WHEN ps.id IS NULL THEN 0
+              WHEN EXISTS (
+                SELECT 1
+                FROM bookings AS b
+                LEFT JOIN booking_members AS bm
+                  ON bm.booking_id = b.id
+                 AND bm.user_id = ps.user_id
+                 AND bm.invite_status = 'accepted'
+                WHERE b.room_id = lc.room_id
+                  AND b.status = 'confirmed'
+                  AND (b.host_id = ps.user_id OR bm.id IS NOT NULL)
+                  AND CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+07:00')
+                    >= TIMESTAMP(b.booking_date, SUBSTRING_INDEX(b.time_slot, '-', 1))
+                  AND CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+07:00')
+                    < TIMESTAMP(b.booking_date, SUBSTRING_INDEX(b.time_slot, '-', -1))
+              ) THEN 1
+              ELSE 0
+            END AS has_active_booking,
+            CASE
               WHEN lc.status = 'maintenance' OR r.status = 'maintenance' THEN 'maintenance'
               WHEN r.status = 'closed' THEN 'offline'
               WHEN ta.last_seen_at IS NULL
@@ -161,45 +193,65 @@ export class AdminTrackingService {
   }): Promise<Array<Record<string, unknown>>> {
     const conditions: string[] = [];
     const parameters: unknown[] = [];
+    const roomColumn = filters.type === 'session' ? 'te.room_id' : 'r.id';
+    const computerColumn =
+      filters.type === 'session' ? 'te.computer_id' : 'lc.id';
     if (filters.roomId) {
-      conditions.push('r.id = ?');
+      conditions.push(`${roomColumn} = ?`);
       parameters.push(filters.roomId);
     }
     if (filters.computerId) {
-      conditions.push('lc.id = ?');
+      conditions.push(`${computerColumn} = ?`);
       parameters.push(filters.computerId);
     }
     if (filters.date) {
-      conditions.push(
-        "DATE(CONVERT_TZ(te.occurred_at, '+00:00', '+07:00')) = ?",
-      );
+      conditions.push(`${this.bangkokDate('te.occurred_at')} = ?`);
       parameters.push(filters.date);
     }
     if (filters.type === 'flagged') {
       conditions.push("te.risk_level <> 'none'");
-    } else if (filters.type === 'session') {
-      conditions.push("te.event_type IN ('login', 'logout')");
-    } else if (filters.type) {
+    } else if (filters.type === 'website') {
+      conditions.push(
+        "(te.event_type = 'website' OR te.domain IS NOT NULL)",
+      );
+    } else if (filters.type && filters.type !== 'session') {
       conditions.push('te.event_type = ?');
       parameters.push(filters.type);
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const safeLimit = Math.min(Math.max(filters.limit, 1), 500);
     parameters.push(safeLimit);
-    return this.readRows(
-      (await this.dataSource.query(
-        `
-          SELECT
-            te.id, te.event_uuid, te.event_type, te.name, te.domain,
-            te.duration_minutes, te.risk_level, te.was_blocked,
-            te.occurred_at, ta.computer_id, lc.machine_no,
-            r.id AS room_id, r.room_name, ps.user_id, u.username
-          FROM tracking_events AS te
+    const source =
+      filters.type === 'session'
+        ? this.sessionActivitySource()
+        : `
+          tracking_events AS te
           INNER JOIN tracking_agents AS ta ON ta.id = te.agent_id
           INNER JOIN lab_computers AS lc ON lc.id = ta.computer_id
           INNER JOIN rooms AS r ON r.id = lc.room_id
           LEFT JOIN pc_sessions AS ps ON ps.id = te.session_id
           LEFT JOIN users AS u ON u.id = ps.user_id
+        `;
+    const columns =
+      filters.type === 'session'
+        ? `
+            te.id, NULL AS event_uuid, te.event_type, te.name, te.domain,
+            te.duration_minutes, te.risk_level, te.was_blocked,
+            te.occurred_at, te.computer_id, te.machine_no,
+            te.room_id, te.room_name, te.user_id, te.username
+          `
+        : `
+            te.id, te.event_uuid, te.event_type, te.name, te.domain,
+            te.duration_minutes, te.risk_level, te.was_blocked,
+            te.occurred_at, ta.computer_id, lc.machine_no,
+            r.id AS room_id, r.room_name, ps.user_id, u.username
+          `;
+    return this.readRows(
+      (await this.dataSource.query(
+        `
+          SELECT
+            ${columns}
+          FROM ${source}
           ${where}
           ORDER BY te.occurred_at DESC, te.id DESC
           LIMIT ?
@@ -207,6 +259,43 @@ export class AdminTrackingService {
         parameters,
       )) as unknown,
     );
+  }
+
+  // Agent events were stored as Bangkok wall time, while session times are UTC.
+  // A value still ahead of UTC is already local and must not be shifted again.
+  private bangkokDate(column: string): string {
+    return `DATE(IF(${column} > UTC_TIMESTAMP() + INTERVAL 30 MINUTE, ${column}, CONVERT_TZ(${column}, '+00:00', '+07:00')))`;
+  }
+
+  private sessionActivitySource(): string {
+    return `
+      (
+        SELECT
+          ps.id * 2 AS id, 'login' AS event_type, 'เข้าใช้งาน' AS name,
+          NULL AS domain,
+          TIMESTAMPDIFF(
+            MINUTE, ps.login_time, COALESCE(ps.logout_time, UTC_TIMESTAMP())
+          ) AS duration_minutes,
+          'none' AS risk_level, 0 AS was_blocked, ps.login_time AS occurred_at,
+          lc.id AS computer_id, lc.machine_no, r.id AS room_id, r.room_name,
+          ps.user_id, u.username
+        FROM pc_sessions AS ps
+        INNER JOIN lab_computers AS lc ON lc.id = ps.computer_id
+        INNER JOIN rooms AS r ON r.id = lc.room_id
+        INNER JOIN users AS u ON u.id = ps.user_id
+        UNION ALL
+        SELECT
+          ps.id * 2 + 1, 'logout', 'ออกจากระบบ', NULL,
+          TIMESTAMPDIFF(MINUTE, ps.login_time, ps.logout_time),
+          'none', 0, ps.logout_time,
+          lc.id, lc.machine_no, r.id, r.room_name, ps.user_id, u.username
+        FROM pc_sessions AS ps
+        INNER JOIN lab_computers AS lc ON lc.id = ps.computer_id
+        INNER JOIN rooms AS r ON r.id = lc.room_id
+        INNER JOIN users AS u ON u.id = ps.user_id
+        WHERE ps.logout_time IS NOT NULL
+      ) AS te
+    `;
   }
 
   async exportCsv(
@@ -274,16 +363,17 @@ export class AdminTrackingService {
         conditions.push('r.id = ?');
         parameters.push(dto.room_id);
       }
-      if (dto.from) {
+      if (dto.report === 'website') {
         conditions.push(
-          `DATE(CONVERT_TZ(te.occurred_at, '+00:00', '+07:00')) >= ?`,
+          "(te.event_type = 'website' OR te.domain IS NOT NULL)",
         );
+      }
+      if (dto.from) {
+        conditions.push(`${this.bangkokDate('te.occurred_at')} >= ?`);
         parameters.push(dto.from);
       }
       if (dto.to) {
-        conditions.push(
-          `DATE(CONVERT_TZ(te.occurred_at, '+00:00', '+07:00')) <= ?`,
-        );
+        conditions.push(`${this.bangkokDate('te.occurred_at')} <= ?`);
         parameters.push(dto.to);
       }
       headers = [

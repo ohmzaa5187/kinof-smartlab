@@ -34,6 +34,7 @@ import { LabModule } from './lab-features/lab.module';
         username: config.getOrThrow<string>('DB_USERNAME'),
         password: config.getOrThrow<string>('DB_PASSWORD'),
         database: config.getOrThrow<string>('DB_DATABASE'),
+        timezone: 'Z',
         autoLoadEntities: true,
         synchronize: false,
       }),

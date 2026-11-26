@@ -70,13 +70,20 @@ const BULK_ACTIONS = {
   },
 };
 
+const parseStoredDate = (value) => {
+  if (value instanceof Date) return value;
+  const text = String(value);
+  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(text)) return new Date(`${text.replace(" ", "T")}Z`);
+  return new Date(text);
+};
+
 const formatDateTime = (value) => value
-  ? new Date(value).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })
+  ? parseStoredDate(value).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })
   : "-";
 
 const formatDuration = (startedAt) => {
   if (!startedAt) return "-";
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 60000));
+  const minutes = Math.max(0, Math.round((Date.now() - parseStoredDate(startedAt).getTime()) / 60000));
   if (minutes < 60) return `${minutes} นาที`;
   return `${Math.floor(minutes / 60)} ชม. ${minutes % 60} นาที`;
 };

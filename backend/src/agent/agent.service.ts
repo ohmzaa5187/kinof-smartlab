@@ -146,7 +146,7 @@ export class AgentService {
           event.duration_minutes ?? null,
           riskLevel,
           wasBlocked ? 1 : 0,
-          new Date(event.occurred_at),
+          this.utcDateTime(event.occurred_at),
           event.metadata ? JSON.stringify(event.metadata) : null,
         ],
       )) as unknown;
@@ -246,6 +246,15 @@ export class AgentService {
       `,
       [dto.hostname ?? null, dto.agent_version ?? null, agentId],
     );
+  }
+
+  private utcDateTime(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('occurred_at ไม่ถูกต้อง');
+    }
+    const pad = (part: number) => String(part).padStart(2, '0');
+    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
   }
 
   private async findActiveSessionId(

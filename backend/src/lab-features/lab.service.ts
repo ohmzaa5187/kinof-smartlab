@@ -204,10 +204,17 @@ export class LabService {
       WHERE te.risk_level<>'none' AND te.occurred_at>=UTC_TIMESTAMP()-INTERVAL 32 DAY ORDER BY te.id DESC`);
     const all = rows(
       await this.db.query(
-        `SELECT br.*,lc.room_id,lc.id AS computer_id,lc.machine_no,r.room_name,u.username,u.first_name,u.last_name,te.occurred_at
+        `SELECT br.*,lc.room_id,lc.id AS computer_id,lc.machine_no,r.room_name,u.username,u.first_name,u.last_name,
+        COALESCE(agg.last_seen_at, te.occurred_at) AS occurred_at, COALESCE(agg.occurrence_count, 1) AS occurrence_count
       FROM behavior_reviews br JOIN tracking_events te ON te.id=br.event_id JOIN tracking_agents ta ON ta.id=te.agent_id
       JOIN lab_computers lc ON lc.id=ta.computer_id JOIN rooms r ON r.id=lc.room_id LEFT JOIN users u ON u.id=br.user_id
-      ${room ? 'WHERE lc.room_id=?' : ''} ORDER BY te.occurred_at DESC`,
+      LEFT JOIN (
+        SELECT CONCAT(COALESCE(ps.user_id,'anon'),':',IF(te.domain IS NOT NULL,'website',IF(te.event_type='program','program','suspicious')),':',LOWER(COALESCE(te.domain,te.name,te.event_type))) AS queue_key,
+          COUNT(*) AS occurrence_count, MAX(te.occurred_at) AS last_seen_at
+        FROM tracking_events te LEFT JOIN pc_sessions ps ON ps.id=te.session_id
+        WHERE te.risk_level<>'none' GROUP BY queue_key
+      ) agg ON agg.queue_key=br.queue_key
+      ${room ? 'WHERE lc.room_id=?' : ''} ORDER BY occurred_at DESC`,
         room ? [room] : [],
       ),
     );
@@ -226,7 +233,7 @@ export class LabService {
           seatLabel: r.machine_no,
           activity: r.target,
           lastSeenAt: r.occurred_at,
-          occurrenceCount: 1,
+          occurrenceCount: Number(r.occurrence_count ?? 1),
           website: r.kind === 'website' ? r.target : null,
           program: r.kind === 'program' ? r.target : null,
           user: {
@@ -357,7 +364,9 @@ export class LabService {
         `SELECT te.name AS processName,MAX(te.occurred_at) AS lastSeenAt,COUNT(*) AS occurrenceCount,
        COUNT(DISTINCT lc.id) AS machineCount
      FROM tracking_events te JOIN tracking_agents ta ON ta.id=te.agent_id JOIN lab_computers lc ON lc.id=ta.computer_id JOIN rooms r ON r.id=lc.room_id
-     WHERE te.event_type='program' AND NOT EXISTS (SELECT 1 FROM program_rules pr WHERE pr.process_name=LOWER(te.name))
+     WHERE te.event_type='program' AND NOT EXISTS (
+       SELECT 1 FROM program_rules pr
+       WHERE pr.process_name=LOWER(te.name) OR pr.process_name=CONCAT(LOWER(te.name),'.exe'))
        ${room ? 'AND lc.room_id=?' : ''}
        ${date && date !== 'all' ? "AND DATE(CONVERT_TZ(te.occurred_at,'+00:00','+07:00'))=?" : ''}
        GROUP BY te.name ORDER BY lastSeenAt DESC LIMIT 500`,
